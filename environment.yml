@@ -1,0 +1,18 @@
+name: 2pprocessing-env
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.9
+  - numpy
+  - tifffile
+  - opencv
+  - caiman
+  - napari
+  - pyqt
+  - qtpy
+  - tkinter
+  - pip
+  - pip:
+      - tkinterdnd2
