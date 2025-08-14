@@ -18,7 +18,7 @@ Python tools for reading, merging, motion-correcting, and downsampling `.tif` im
 
 ---
 
-## ⚠Limitations
+## Limitations
 
 - Only `.tif` files are supported as input (no `.lsm`, `.czi`, etc.)
 - 3D motion correction is **not yet implemented**
