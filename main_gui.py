@@ -6,8 +6,8 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from compiler import read_tif_files_merge_z_and_t, read_tif_files_split_by_z, z_project_per_file
-from motion_correction_2D import run_motion_correction_array
-from motion_correction_3D import run_3D_motion_correction_array
+from motion_correction_2D import run_2D_motion_correction
+from motion_correction_3D import run_3D_motion_correction
 from downsampler import downsample_tiff
 
 
@@ -16,82 +16,61 @@ def run_selected_operation():
     main_mode = mode_var.get()
     sub_mode = sub_mode_var.get()
 
+    dropped_items = listbox.get(0, tk.END)
+    if not dropped_items:
+        print("Error", "Please drop folders or .tif files to process")
+        return
 
-    if main_mode == "compile":
-        folder_list = listbox.get(0, tk.END)
-        if not folder_list:
-            messagebox.showerror("Error", "Please drop folders to process")
-            return
+    for item in dropped_items:
+        print(f"[INFO] Processing Folder: {item}")
+        if os.path.isdir(item):
+            tif_files = sorted(glob.glob(os.path.join(item, "*.tif")))
+            print(f'{tif_files[0:10]}...')  # Show first 10 files for brevity
+        elif item.lower().endswith('.tif'):
+            tif_files = [item]
+        else:
+            print(f"[ERROR] Unsupported file type: {item}")
+            continue
 
-        for folder in folder_list:
-            print(f"[INFO] Processing Folder: {folder}")
+        if not tif_files:
+            print(f"[ERROR] No Tiff files found in {item}")
+            continue
 
-        for directory in folder_list:
-            files = sorted(glob.glob(os.path.join(directory, "*.tif")))
-
+        ## Compile Mode
+        if main_mode == "compile":
             try:
-                with tifffile.TiffFile(files[0]) as tif:
+                with tifffile.TiffFile(tif_files[0]) as tif:
                     zstack_len = len(tif.pages)
-                print(f"[INFO] {directory} Detected Z-stack Length: {zstack_len}")
+                print(f"[INFO] {tif_files} Detected Z-stack Length: {zstack_len}")
             except Exception as e:
-                messagebox.showerror("Error", f"Failed to read Tiff Files in {directory}: {e}")
+                print(f"Error: Failed to read Tiff Files in {tif_files}: {e}")
                 continue
 
             if sub_mode == "merge":
-                read_tif_files_merge_z_and_t(directory, zstack_len)
+                read_tif_files_merge_z_and_t(tif_files, zstack_len)
             elif sub_mode == "split":
-                read_tif_files_split_by_z(directory, zstack_len)
+                read_tif_files_split_by_z(tif_files, zstack_len)
             elif sub_mode == "zproj":
-                z_project_per_file(directory)
+                z_project_per_file(tif_files)
             else:
-                messagebox.showerror("Error", "Invalid sub-mode selected")
+                print(f"Error:Invalid sub-mode selected")
 
-    elif main_mode == "motion":
-
-        folder_list = listbox.get(0, tk.END)
-        if not folder_list:
-            print("Error", "Please drop folders to process")
-            return
-
-        for folder in folder_list:
-            print(f"[INFO] Processing Folder: {folder}")
-
-        for files in folder_list:
-            tif_file = sorted(glob.glob(os.path.join(files, "*.tif")))
-            if not tif_file:
-                print("Error", "No .tif files found in directory.")
-                continue
-
-            for file in tif_file:
+        ## Motion Correction Mode
+        elif main_mode == "motion":
+            is_nonrigid = sub_sub_mode_var.get() == "nonrigid"
+            for file in tif_files:
                 print(f"[INFO] Processing file: {file}")
 
                 if sub_mode == "2D":
-                    is_nonrigid = (sub_sub_mode_var.get() == "nonrigid")
-                    run_motion_correction_array(file, is_nonrigid)
-
+                    run_2D_motion_correction(file, is_nonrigid)
                 elif sub_mode == "3D":
-                    is_nonrigid = (sub_sub_mode_var.get() == "nonrigid")
-                    run_3D_motion_correction_array(file, is_nonrigid)
+                    run_3D_motion_correction(file, is_nonrigid)
                 print(f"[INFO] Motion correction completed for {file}")
 
-
-    elif main_mode == "downsample":
-        folder_list = listbox.get(0, tk.END)
-        if not folder_list:
-            print("Error", "Please drop folders to process")
-            return
-
-        for folder in folder_list:
-            print(f"[INFO] Processing Folder: {folder}")
-
-        for files in folder_list:
-            tif_file = sorted(glob.glob(os.path.join(files, "*.tif")))
-            if not tif_file:
-                print("Error", "No .tif files found in directory.")
-                continue
-
-            for file in tif_file:
-                print(f"[INFO] Processing File: {file}")
+        ## Downsample Mode
+        elif main_mode == "downsample":
+            for file in tif_files:
+                print(f"[INFO] Processing Item: {file}")
                 downsample_tiff(file)
 
     root.destroy()
@@ -136,8 +115,8 @@ def main():
 
     sub_motion_frame = tk.Frame(root)
     tk.Label(sub_motion_frame, text="Select Motion Correction").pack(pady=10)
-    tk.Radiobutton(sub_motion_frame, text="2D Motion Correction", variable=sub_mode_var, value="2D").pack(anchor='w', padx=20)
-    tk.Radiobutton(sub_motion_frame, text="3D Motion Correction", variable=sub_mode_var, value="3D").pack(anchor='w', padx=20)
+    tk.Radiobutton(sub_motion_frame, text="2D Motion Correction (CaImAn)", variable=sub_mode_var, value="2D").pack(anchor='w', padx=20)
+    tk.Radiobutton(sub_motion_frame, text="3D Motion Correction (CaImAn)", variable=sub_mode_var, value="3D").pack(anchor='w', padx=20)
 
     motion_type_frame = tk.Frame(root)
     tk.Label(motion_type_frame, text="Select motion correction type:").pack(pady=10)

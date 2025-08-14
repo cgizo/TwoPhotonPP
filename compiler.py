@@ -5,14 +5,10 @@ import os
 from tkinter import filedialog, messagebox, simpledialog
 
 
-def read_tif_files_merge_z_and_t(directory, zstack_len):
-
-    files = sorted(glob.glob(os.path.join(directory, "*.tif")))
+def read_tif_files_merge_z_and_t(tif_files, zstack_len):
     all_zstacks = []
 
-
-    print(f"Loaddd z stack:")
-    for file in files:
+    for file in tif_files:
         print(f"Processing: {file}")
         try:
             with tifffile.TiffFile(file) as tif:
@@ -32,7 +28,7 @@ def read_tif_files_merge_z_and_t(directory, zstack_len):
 
     data = np.stack(all_zstacks)  # shape: [T, Z, Y, X]
 
-    filename = os.path.basename(directory)
+    filename = os.path.basename(tif_files[0])
     base, ext = os.path.splitext(filename)
     if not ext:
         ext = ".tif"
@@ -57,11 +53,11 @@ def read_tif_files_merge_z_and_t(directory, zstack_len):
         print(f"Save failed: {e}")
 
 
-def read_tif_files_split_by_z(directory, zstack_len):
-    files = sorted(glob.glob(os.path.join(directory, "*.tif")))
+def read_tif_files_split_by_z(tif_files, zstack_len):
+
     z_slices = [[] for _ in range(zstack_len)]
 
-    for file in files:
+    for file in tif_files:
         print(f"processing: {file}")
         try:
             with tifffile.TiffFile(file) as tif:
@@ -76,7 +72,7 @@ def read_tif_files_split_by_z(directory, zstack_len):
             print(f"Skipping {file} due to error: {e}")
 
 
-    filename = os.path.basename(directory)
+    filename = os.path.basename(tif_files[0])
     base, ext = os.path.splitext(filename)
     if not ext:
         ext = ".tif"
@@ -97,11 +93,11 @@ def read_tif_files_split_by_z(directory, zstack_len):
 
 
 
-def z_project_per_file(directory):
-    files = sorted(glob.glob(os.path.join(directory, "*.tif")))
+def z_project_per_file(tif_files):
+
     projections = []
 
-    for file in files:
+    for file in tif_files:
         print(f"Z-projection (avg): {file}")
 
         try:
@@ -119,7 +115,7 @@ def z_project_per_file(directory):
 
     data = np.stack(projections)  # shape: [T, Y, X]
 
-    filename = os.path.basename(directory)
+    filename = os.path.basename(os.path.dirname(tif_files[0]))
     base, ext = os.path.splitext(filename)
     if not ext:
         ext = ".tif"

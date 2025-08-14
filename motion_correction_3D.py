@@ -1,52 +1,30 @@
-import napari
-from qtpy.QtWidgets import QApplication
-from caiman.motion_correction import MotionCorrect
-from caiman.source_extraction.cnmf import params as params
-from caiman.base.movies import load
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # Suppress INFO, WARNING, and ERROR messages
+import glob
+
+from tkinter import filedialog, messagebox
 import tifffile
+import numpy as np
 import cv2
+
 try:
     cv2.setNumThreads(0)
 except:
     pass
 
+from caiman.base.movies import load
+import caiman as cm
+from caiman.motion_correction import MotionCorrect, motion_correction_piecewise
+from caiman.source_extraction.cnmf import params as params
 
 
-def preview_movie_napari(original, corrected):
-    """ launch napari viewer
+def run_3D_motion_correction(data_path, is_nonrigid=False):
     """
-    app = QApplication.instance() or QApplication([])
-
-    viewer = napari.Viewer()
-
-    viewer.add_image(original,
-                     name='Original',
-                     colormap='gray',
-                     scale=[1, 1, 1, 1],
-                     blending='additive',
-                     rendering='mip',
-                     cache=True)
-
-    viewer.add_image(corrected,
-                     name='Corrected',
-                     colormap='magenta',
-                     scale=[1, 1, 1, 1],
-                     blending='additive',
-                     rendering='mip',
-                     cache=True)
-
-    viewer.dims.link_scroll = True
-    viewer.dims.order = (0, 1, 2, 3)  # T, X Y, X
-    viewer.grid.enabled = True
-    napari.run()
-
-def run_3D_motion_correction_array(file_path, is_nonrigid=True):
-    """
-    Run motion correction directly on a [T, Z, Y, X] NumPy array.
+    Run motion correction directly on a [T, Y, X] NumPy array.
 
     Parameters:
         data : np.ndarray
-            4D time-series image stack (shape: [T, Z, Y, X])
+            3D time-series image stack (shape: [T, Y, X])
         is_nonrigid : bool
             True = non-rigid (piecewise), False = rigid
 
@@ -54,56 +32,72 @@ def run_3D_motion_correction_array(file_path, is_nonrigid=True):
         corrected : np.ndarray
             Motion-corrected array with same shape
     """
-    print("Starting Motion Correction")
+
 
     # Setup motion correction parameters
-    motion_params = params.CNMFParams(params_dict={
-        'fnames': file_path,
-        'pw_rigid': True,
-        'max_deviation_rigid': 5,
-        'max_shifts': (4, 4, 2),
-        'strides': (24, 24, 6),
-        'overlaps': (12, 12, 2),
-        'is3D': True,
-        'border_nan': False
+    parameter_dict={
+        'data': {
+            'fnames': data_path
+        },
+        'motion': {
+            'pw_rigid': is_nonrigid,
+            'max_shifts': (30, 30, 5),  # maximum allowed rigid shifts (in pixels)
+            'strides': (32, 32, 2),  # start a new patch for pw-rigid motion correction every x pixels
+            'overlaps': (32, 32, 2), # overlap between patches (size of patch strides+overlaps)
+            'max_deviation_rigid': 5, # maximum shifts deviation allowed for patch with respect to rigid shifts
+            'border_nan': 'copy',
+            'is3D': True
+        }
+    }
 
-    })
 
-    print(f"[INFO] Running motion correction on file:{file_path}")
+    parameters = params.CNMFParams(params_dict=parameter_dict)
 
-    mc = MotionCorrect(file_path, dview=None, **motion_params.get_group('motion'))
 
-    print("MotionCorrect object created.")
-    start = time.time()
-    mc.motion_correct(save_movie=True)
+    if 'cluster' in locals():
+        print('Closing Previous Cluster')
+        cm.stop_server(dview=cluster)
+    print ('setting up cluster')
 
-    print(f"[INFO] Motion correction complete in {time.time() - start:.1f} seconds.")
+    _, cluster, n_processes =cm.cluster.setup_cluster(backend='multiprocessing',
+                                                    n_processes=30,
+                                                    single_thread=False)
+    print(f"[INFO] Using {n_processes} processes for motion correction")
 
-    corrected_path = mc.fname_tot_els
-    corrected = load(corrected_path)
 
+    print(f"[INFO] Running {'non-rigid' if is_nonrigid else 'rigid'} motion correction on data ...")
+
+
+
+
+
+    mc = MotionCorrect(data_path, dview=cluster, **parameters.motion)
+    mc.motion_correct(save_movie=False)
+
+    corrected = mc.apply_shifts_movie(fname=data_path)
     print("[INFO] Motion Correction Complete")
 
+    corr_norm = (corrected - corrected.min()) / (corrected.max() - corrected.min())
+    corrected_16 = (corr_norm * 65535).astype(np.uint16)
 
-def start_motion_correction():
-    file_path = filedialog.askopenfilename(title="Select Tiff Time Series",
-                                           filetypes=[("TIFF files", "*.tif"), ("All Files", "*.*")])
-
-    if not file_path:
-        messagebox.showinfo("Cancelled", "No file selected")
-        return
-    print(F"[INFO] Loading file: {file_path}")
-
-    try:
-        movie = load(file_path, is3D=True)  # returns a caiman movie object
-        if movie.ndim != 4:
-            raise ValueError("Expected 4D time series (T, Z, Y, X)")
-
-        if movie.dtype != np.float32:
-            raise(f"[WARNING] converting movie from {movie.dtype} to float32")
-            movie = movie.astype(np.float32)
-
-    except Exception as e:
-        messagebox.showerror("Error", f"failed to load tiff: {e}")
+    output_dir = filedialog.askdirectory(title=f"Select Output Folder for Motion Corrected {data_path}")
+    if not output_dir:
+        print("[INFO] No output directory selected")
         return
 
+    filename = os.path.basename(data_path)
+    base, ext = os.path.splitext(filename)
+    save_path = os.path.join(output_dir, f"{base}_MC2D{ext}")
+
+    tifffile.imwrite(save_path, corrected_16,
+                     bigtiff=True,
+                     photometric='minisblack',
+                     compression=None,
+                     imagej=True,
+                     metadata={'axes': 'TZYX'})
+
+
+
+    cm.stop_server(dview=cluster)
+    print(f"Success", f"All Motion corrected files saved to: :\n{output_dir}")
+    return corrected

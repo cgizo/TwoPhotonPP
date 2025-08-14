@@ -5,7 +5,8 @@ import glob
 from tkinter import filedialog, messagebox
 import tifffile
 import numpy as np
-import cv2
+
+import sys
 
 try:
     cv2.setNumThreads(0)
@@ -18,7 +19,8 @@ from caiman.motion_correction import MotionCorrect, motion_correction_piecewise
 from caiman.source_extraction.cnmf import params as params
 
 
-def run_motion_correction_array(data_path, is_nonrigid=False):
+def run_2D_motion_correction(data_path, is_nonrigid=False):
+
     """
     Run motion correction directly on a [T, Y, X] NumPy array.
 
@@ -41,7 +43,7 @@ def run_motion_correction_array(data_path, is_nonrigid=False):
         },
         'motion': {
             'pw_rigid': is_nonrigid,
-            'max_shifts': (15, 15),
+            'max_shifts': (25, 25),
             'strides': (32, 32),
             'overlaps': (32, 32),
             'max_deviation_rigid': 3,
@@ -93,5 +95,17 @@ def run_motion_correction_array(data_path, is_nonrigid=False):
 
 
     cm.stop_server(dview=cluster)
-    messagebox.showinfo("Success", f"All Motion corrected files saved to: :\n{output_dir}")
+    print(f"Success", f"All Motion corrected files saved to: :\n{output_dir}")
     return corrected
+
+
+def main():
+    #handle command line arguments
+    data_path = sys.argv[1]
+    is_nonrigid = sys.argv[2].lower() == "nonrigid" if len(sys.argv) > 2 else False
+    run_2D_motion_correction(data_path, is_nonrigid)
+
+if __name__ == "__main__":
+    from multiprocessing import freeze_support
+    freeze_support()
+    main()
